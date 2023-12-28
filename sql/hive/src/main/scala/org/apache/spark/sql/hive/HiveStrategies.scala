@@ -22,6 +22,7 @@ import java.util.Locale
 
 import org.apache.hadoop.fs.{FileSystem, Path}
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.expressions._
@@ -190,7 +191,7 @@ object HiveAnalysis extends Rule[LogicalPlan] {
  * `PreprocessTableCreation`, `PreprocessTableInsertion`, `DataSourceAnalysis` and `HiveAnalysis`.
  */
 case class RelationConversions(
-    sessionCatalog: HiveSessionCatalog) extends Rule[LogicalPlan] {
+    sessionCatalog: HiveSessionCatalog) extends Rule[LogicalPlan] with Logging {
   private def isConvertible(relation: HiveTableRelation): Boolean = {
     isConvertible(relation.tableMeta)
   }
@@ -203,14 +204,33 @@ case class RelationConversions(
 
   private val metastoreCatalog = sessionCatalog.metastoreCatalog
 
+  private def canConvert(query: LogicalPlan, r: HiveTableRelation): Boolean = {
+    val ret1 = query.resolved
+    val ret2 = DDLUtils.isHiveTable(r.tableMeta)
+    val ret3 = (!r.isPartitioned || conf.getConf(HiveUtils.CONVERT_INSERTING_PARTITIONED_TABLE))
+    val ret4 = isConvertible (r)
+    logWarning(s"==>query.resolved: $ret1, isHiveTable: $ret2, isPartitionedEnabled: $ret3," +
+      s"isConvertible $ret4")
+    if (!ret2) {
+      logWarning(s"==>not hive table due to its provider: ${r.tableMeta.provider}")
+    }
+    if (!ret3) {
+      logWarning(s"==>partitioned not enabled due to (isPartitioned: ${r.isPartitioned}," +
+        s" conf enabled: ${conf.getConf(HiveUtils.CONVERT_INSERTING_PARTITIONED_TABLE)})")
+    }
+    if (!ret4) {
+      logWarning(s"==>not convertible due to its serde is " +
+        s"${r.tableMeta.storage.serde.getOrElse("").toLowerCase(Locale.ROOT)}")
+    }
+    ret1 && ret2 && ret3 && ret4
+  }
+
   override def apply(plan: LogicalPlan): LogicalPlan = {
     plan resolveOperators {
       // Write path
       case InsertIntoStatement(
           r: HiveTableRelation, partition, cols, query, overwrite, ifPartitionNotExists)
-          if query.resolved && DDLUtils.isHiveTable(r.tableMeta) &&
-            (!r.isPartitioned || conf.getConf(HiveUtils.CONVERT_INSERTING_PARTITIONED_TABLE))
-            && isConvertible(r) =>
+          if canConvert(query, r) =>
         InsertIntoStatement(metastoreCatalog.convert(r), partition, cols,
           query, overwrite, ifPartitionNotExists)
 
