@@ -499,8 +499,13 @@ case class AdaptiveSparkPlanExec(
     sb.toString()
   }
 
-  private def q2s(qs: QueryStageExec): String =
-    s"${qs.productPrefix}(id: ${qs.id}, plan: ${qs.plan.productPrefix})"
+  private def q2s(qs: QueryStageExec): String = {
+    val ret = s"${qs.productPrefix}(id: ${qs.id}, "
+    qs.plan match {
+      case ex: Exchange => ret + s"${e2s(ex)})"
+      case _ => ret + s"plan: ${qs.plan.productPrefix})"
+    }
+  }
 
   private def m2s: String = context.stageCache.map { case (k, v) =>
     s"{${k.productPrefix}(hash: ${k.##}) -> ${q2s(v)}"

@@ -210,7 +210,7 @@ case class RelationConversions(
     val ret3 = (!r.isPartitioned || conf.getConf(HiveUtils.CONVERT_INSERTING_PARTITIONED_TABLE))
     val ret4 = isConvertible (r)
     logWarning(s"==>query.resolved: $ret1, isHiveTable: $ret2, isPartitionedEnabled: $ret3," +
-      s"isConvertible $ret4")
+      s" isConvertible $ret4")
     if (!ret2) {
       logWarning(s"==>not hive table due to its provider: ${r.tableMeta.provider}")
     }
@@ -226,6 +226,7 @@ case class RelationConversions(
   }
 
   override def apply(plan: LogicalPlan): LogicalPlan = {
+    logWarning("==>start relation conversion for hive")
     plan resolveOperators {
       // Write path
       case InsertIntoStatement(
